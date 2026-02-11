@@ -2,9 +2,9 @@
 
 A Pi package with personal extensions by **ngutman**.
 
-This repository is intentionally similar in spirit and layout to [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff), but currently focused on one polished extension.
+This repository is intentionally similar in spirit and layout to [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff)
 
-## Included extension
+## Included extensions
 
 ### `repo-shared-sessions`
 
@@ -20,6 +20,16 @@ How repository matching works:
 
 1. Prefer `remote.origin.url` (normalized; supports SSH/HTTPS variants)
 2. Fall back to git top-level path when no remote exists
+
+### `autoname-sessions`
+
+Path: `pi-extensions/autoname-sessions/index.ts`
+
+Command:
+
+- `/autoname-sessions [--dry-run] [--force] [--limit <n>] [--quiet]`
+
+This command infers concise purpose-based session names from transcript samples, with deterministic fallback behavior and a local cache to avoid unnecessary renames.
 
 ## Local usage
 
