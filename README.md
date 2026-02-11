@@ -31,15 +31,21 @@ Command:
 
 This command infers concise purpose-based session names from transcript samples, with deterministic fallback behavior and a local cache to avoid unnecessary renames.
 
-## Local usage
+## Usage
 
-From any project where you use Pi:
+Install directly from GitHub:
+
+```bash
+pi install git:github.com/ngutman/agent-stuff
+```
+
+Install from a local clone:
 
 ```bash
 pi install ~/workspace/agent-stuff
 ```
 
-Or one-off:
+One-off load of a single extension:
 
 ```bash
 pi -e ~/workspace/agent-stuff/pi-extensions/repo-shared-sessions/index.ts

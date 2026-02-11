@@ -6,6 +6,7 @@ All notable changes to this repository are documented here.
 
 - Added `autoname-sessions` extension with manual command and optional autorun mode (`PI_AUTONAME_SESSIONS_AUTO=1`).
 - Added transcript-based naming with deterministic fallback and cache-backed rename safety.
+- Updated README usage instructions for installing directly from GitHub.
 
 ## 0.1.0
 
