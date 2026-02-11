@@ -1,0 +1,25 @@
+{
+  "name": "ngutman-agent-stuff",
+  "version": "0.1.0",
+  "description": "Pi package with custom extensions by ngutman",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ngutman/agent-stuff.git"
+  },
+  "license": "MIT",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension"
+  ],
+  "pi": {
+    "extensions": [
+      "./pi-extensions/repo-shared-sessions/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-tui": "*"
+  }
+}
