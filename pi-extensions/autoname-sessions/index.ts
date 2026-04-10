@@ -33,6 +33,11 @@ type RenameOptions = {
 	quiet: boolean;
 };
 
+type RenameRunHooks = {
+	setStatus?: (text: string | undefined) => void;
+	log?: (line: string) => void;
+};
+
 type RenameChange = {
 	path: string;
 	from: string;
@@ -305,7 +310,7 @@ async function inferNameWithPi(pi: ExtensionAPI, session: SessionInfo, transcrip
 	return candidate;
 }
 
-async function renameSessions(pi: ExtensionAPI, opts: RenameOptions): Promise<RenameReport> {
+async function renameSessions(pi: ExtensionAPI, opts: RenameOptions, hooks: RenameRunHooks = {}): Promise<RenameReport> {
 	if (activeRunPromise) {
 		try {
 			await activeRunPromise;
@@ -314,14 +319,26 @@ async function renameSessions(pi: ExtensionAPI, opts: RenameOptions): Promise<Re
 		}
 	}
 
+	const log = hooks.log;
+	const setStatus = hooks.setStatus;
+
 	const runPromise = (async (): Promise<RenameReport> => {
+		setStatus?.("autoname-sessions: listing sessions...");
 		const allSessions = await SessionManager.listAll();
+		log?.(`listed ${allSessions.length} total sessions`);
+
+		setStatus?.("autoname-sessions: loading cache...");
 		const cache = await loadCache();
 
+		setStatus?.("autoname-sessions: selecting candidates...");
 		const candidates = allSessions
 			.filter((session) => shouldProcessSession(session, cache, opts))
 			.sort((a, b) => b.modified.getTime() - a.modified.getTime())
 			.slice(0, Math.max(1, opts.limit));
+
+		log?.(
+			`selected ${candidates.length} candidate sessions (limit=${opts.limit}, force=${opts.force}, dryRun=${opts.dryRun})`,
+		);
 
 		const report: RenameReport = {
 			totalSessions: allSessions.length,
@@ -335,6 +352,9 @@ async function renameSessions(pi: ExtensionAPI, opts: RenameOptions): Promise<Re
 
 		for (const session of candidates) {
 			report.processed += 1;
+			const file = basename(session.path);
+			setStatus?.(`autoname-sessions: ${report.processed}/${report.candidates} ${file}`);
+
 			try {
 				const manager = SessionManager.open(session.path);
 				const entries = manager.getEntries();
@@ -342,19 +362,26 @@ async function renameSessions(pi: ExtensionAPI, opts: RenameOptions): Promise<Re
 
 				if (transcript.userMessages.length === 0) {
 					report.skipped += 1;
+					log?.(`skip ${file}: no user messages`);
 					continue;
 				}
 
 				let inferredName: string;
+				let usedFallback = false;
 				try {
 					inferredName = await inferNameWithPi(pi, session, transcript);
-				} catch {
+				} catch (error) {
+					usedFallback = true;
+					log?.(
+						`pi inference failed for ${file}: ${error instanceof Error ? error.message : String(error)} (using fallback)`,
+					);
 					inferredName = fallbackNameFromTranscript(transcript);
 				}
 
 				const normalized = normalizeName(inferredName);
 				if (!normalized) {
 					report.skipped += 1;
+					log?.(`skip ${file}: inferred empty name${usedFallback ? " (fallback)" : ""}`);
 					continue;
 				}
 
@@ -366,6 +393,7 @@ async function renameSessions(pi: ExtensionAPI, opts: RenameOptions): Promise<Re
 						updatedAt: Date.now(),
 					};
 					report.skipped += 1;
+					log?.(`skip ${file}: already named "${normalized}"`);
 					continue;
 				}
 
@@ -378,13 +406,22 @@ async function renameSessions(pi: ExtensionAPI, opts: RenameOptions): Promise<Re
 					updatedAt: Date.now(),
 				};
 				report.renamed += 1;
+
+				const from = currentName || "(unnamed)";
+				log?.(
+					`${opts.dryRun ? "plan" : "rename"} ${file}: ${from} -> ${normalized}${usedFallback ? " (fallback)" : ""}`,
+				);
 			} catch (error) {
 				report.errors.push({
 					path: session.path,
 					error: error instanceof Error ? error.message : String(error),
 				});
+				log?.(`error ${file}: ${error instanceof Error ? error.message : String(error)}`);
 			}
 		}
+
+		setStatus?.(reportLine(report, opts.dryRun));
+		log?.(reportLine(report, opts.dryRun));
 
 		if (!opts.dryRun) await saveCache(cache);
 		return report;
@@ -504,9 +541,9 @@ export default function registerAutonameSessions(pi: ExtensionAPI) {
 		void runAuto(pi, ctx);
 	});
 
-	pi.registerCommand("autoname-sessions", {
+	const command = {
 		description: "Auto-name sessions by inferred purpose from transcript context",
-		getArgumentCompletions: (prefix) => {
+		getArgumentCompletions: (prefix: string) => {
 			const options = [
 				{ value: "--force", label: "--force" },
 				{ value: "--dry-run", label: "--dry-run" },
@@ -517,7 +554,7 @@ export default function registerAutonameSessions(pi: ExtensionAPI) {
 			const filtered = options.filter((option) => option.value.startsWith(prefix));
 			return filtered.length > 0 ? filtered : null;
 		},
-		handler: async (args, ctx) => {
+		handler: async (args: string, ctx: ExtensionContext & { waitForIdle: () => Promise<void> }) => {
 			const opts = parseOptions(args, {
 				force: false,
 				dryRun: false,
@@ -525,27 +562,82 @@ export default function registerAutonameSessions(pi: ExtensionAPI) {
 				quiet: false,
 			});
 
+			const widgetId = "autoname-sessions";
+			const maxLogLines = 14;
+			const logLines: string[] = [];
+
+			const pushLog = (line: string) => {
+				if (opts.quiet) return;
+				if (!ctx.hasUI) return;
+				logLines.push(line);
+				while (logLines.length > maxLogLines) logLines.shift();
+				ctx.ui.setWidget(widgetId, logLines);
+			};
+
+			const hooks: RenameRunHooks = {
+				setStatus: (text) => {
+					if (opts.quiet) return;
+					if (!ctx.hasUI) return;
+					ctx.ui.setStatus(widgetId, text);
+				},
+				log: (line) => pushLog(line),
+			};
+
 			try {
+				// Always emit a visible message so the user knows the command started.
+				if (!opts.quiet) {
+					pi.sendMessage({
+						customType: "autoname-sessions",
+						content: `autoname-sessions: starting${args.trim() ? ` (args: ${args.trim()})` : ""}`,
+						display: true,
+					});
+				}
+
+				pushLog("waiting for agent to be idle...");
 				await ctx.waitForIdle();
-				const report = await renameSessions(pi, opts);
+				pushLog("agent idle; running...");
+
+				const report = await renameSessions(pi, opts, hooks);
 
 				if (!opts.quiet) {
-					ctx.ui.notify(reportLine(report, opts.dryRun), report.errors.length > 0 ? "warning" : "info");
+					const summary = reportLine(report, opts.dryRun);
+					ctx.ui.notify(summary, report.errors.length > 0 ? "warning" : "info");
 
-					const preview = formatRenamePreview(report, opts.dryRun);
-					if (preview) ctx.ui.notify(preview, "info");
+					const preview = formatRenamePreview(report, opts.dryRun, 20);
+					const messageLines: string[] = [summary];
+					if (preview) messageLines.push("", preview);
 
 					if (report.errors.length > 0) {
 						const first = report.errors[0]!;
+						messageLines.push("", `first error: ${first.error}`);
 						ctx.ui.notify(`first error: ${first.error}`, "warning");
 					}
+
+					pi.sendMessage({
+						customType: "autoname-sessions",
+						content: messageLines.join("\n"),
+						display: true,
+					});
 				}
 			} catch (error) {
-				ctx.ui.notify(
-					`autoname-sessions failed: ${error instanceof Error ? error.message : String(error)}`,
-					"error",
-				);
+				const msg = `autoname-sessions failed: ${error instanceof Error ? error.message : String(error)}`;
+				if (!opts.quiet) {
+					pi.sendMessage({ customType: "autoname-sessions", content: msg, display: true });
+				}
+				ctx.ui.notify(msg, "error");
+			} finally {
+				if (!opts.quiet && ctx.hasUI) {
+					ctx.ui.setStatus(widgetId, undefined);
+					ctx.ui.setWidget(widgetId, undefined);
+				}
 			}
 		},
+	};
+
+	pi.registerCommand("autoname-sessions", command);
+	// Common typo alias
+	pi.registerCommand("autorname-sessions", {
+		...command,
+		description: "Alias for /autoname-sessions (common typo)",
 	});
 }
