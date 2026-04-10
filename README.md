@@ -31,6 +31,12 @@ Command:
 
 This command infers concise purpose-based session names from transcript samples, with deterministic fallback behavior and a local cache to avoid unnecessary renames.
 
+## Documentation
+
+### Slash commands
+
+- [`docs/slash-commands/landpr.md`](docs/slash-commands/landpr.md) — a reusable PR landing workflow that combines the core flow from `agent-scripts` with extra safety checks from a stricter internal prompt variant, including head-drift detection, safer PR comment posting, merge verification, and recovery guidance.
+
 ## Usage
 
 Install directly from GitHub:
