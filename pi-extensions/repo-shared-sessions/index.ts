@@ -1,5 +1,6 @@
-import type { ExtensionAPI, ExtensionCommandContext, SessionInfo } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, SessionInfo, Theme } from "@mariozechner/pi-coding-agent";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
+import { Input, getEditorKeybindings, truncateToWidth, visibleWidth, type Component, type Focusable } from "@mariozechner/pi-tui";
 import { basename, resolve } from "node:path";
 
 type RepoIdentity = {
@@ -11,8 +12,16 @@ type RepoIdentity = {
 
 type ResumeMode = "pick" | "latest";
 
+type SessionCandidate = {
+	session: SessionInfo;
+	title: string;
+	meta: string;
+	search: string;
+};
+
 const GIT_TIMEOUT_MS = 4_000;
 const MAX_TITLE_LEN = 70;
+const SELECTOR_MAX_VISIBLE = 12;
 
 function normalizeRemote(raw: string | undefined): string | undefined {
 	if (!raw) return undefined;
@@ -164,11 +173,163 @@ async function getSharedRepoSessions(
 	return { repo: currentRepo, sessions };
 }
 
-function optionLabel(index: number, session: SessionInfo): string {
-	const title = sessionTitle(session);
-	const age = formatRelativeTime(session.modified);
-	const cwd = shortenPath(session.cwd || "(unknown cwd)");
-	return `[${index + 1}] ${title} · ${age} · ${cwd}`;
+class RepoSessionSelectorComponent implements Component, Focusable {
+	private readonly allCandidates: SessionCandidate[];
+	private filteredCandidates: SessionCandidate[];
+	private readonly searchInput = new Input();
+	private selectedIndex = 0;
+	private _focused = true;
+
+	constructor(
+		private readonly heading: string,
+		sessions: SessionInfo[],
+		private readonly theme: Theme,
+		private readonly onSelect: (session: SessionInfo) => void,
+		private readonly onCancel: () => void,
+	) {
+		this.allCandidates = sessions.map((session) => {
+			const title = sessionTitle(session);
+			const cwd = shortenPath(session.cwd || "(unknown cwd)");
+			const age = formatRelativeTime(session.modified);
+			const meta = `${age} · ${cwd}`;
+			const search = oneLine(`${title} ${cwd} ${session.name ?? ""} ${session.firstMessage ?? ""}`).toLowerCase();
+			return { session, title, meta, search };
+		});
+		this.filteredCandidates = this.allCandidates;
+		this.searchInput.focused = true;
+	}
+
+	get focused(): boolean {
+		return this._focused;
+	}
+
+	set focused(value: boolean) {
+		this._focused = value;
+		this.searchInput.focused = value;
+	}
+
+	invalidate(): void {
+		this.searchInput.invalidate();
+	}
+
+	render(width: number): string[] {
+		const lines: string[] = [];
+		lines.push(this.theme.bold(this.theme.fg("accent", this.heading)));
+		lines.push(...this.searchInput.render(width));
+		lines.push("");
+
+		if (this.filteredCandidates.length === 0) {
+			lines.push(this.theme.fg("muted", "No sessions match your filter."));
+			lines.push(this.theme.fg("muted", "Type to search, or press Esc to cancel."));
+			return lines;
+		}
+
+		const maxVisible = SELECTOR_MAX_VISIBLE;
+		const startIndex = Math.max(
+			0,
+			Math.min(this.selectedIndex - Math.floor(maxVisible / 2), this.filteredCandidates.length - maxVisible),
+		);
+		const endIndex = Math.min(startIndex + maxVisible, this.filteredCandidates.length);
+
+		for (let i = startIndex; i < endIndex; i++) {
+			const candidate = this.filteredCandidates[i];
+			if (!candidate) continue;
+
+			const isSelected = i === this.selectedIndex;
+			const cursor = isSelected ? this.theme.fg("accent", "› ") : "  ";
+			const metaPlain = candidate.meta;
+			const meta = this.theme.fg("muted", metaPlain);
+			const availableForTitle = Math.max(8, width - visibleWidth(cursor) - visibleWidth(metaPlain) - 2);
+			const title = truncateToWidth(candidate.title, availableForTitle, "…");
+			const titleStyled = isSelected ? this.theme.bold(title) : title;
+			const leftPlainWidth = visibleWidth(cursor) + visibleWidth(title);
+			const spacing = " ".repeat(Math.max(1, width - leftPlainWidth - visibleWidth(metaPlain)));
+
+			lines.push(`${cursor}${titleStyled}${spacing}${meta}`);
+		}
+
+		if (startIndex > 0 || endIndex < this.filteredCandidates.length) {
+			lines.push(this.theme.fg("muted", `(${this.selectedIndex + 1}/${this.filteredCandidates.length})`));
+		}
+
+		lines.push("");
+		lines.push(this.theme.fg("muted", truncateToWidth("↑↓ navigate · PgUp/PgDn jump · Enter select · Esc cancel", width, "…")));
+		lines.push(this.theme.fg("muted", truncateToWidth("Type to filter by title/path/message", width, "…")));
+		return lines;
+	}
+
+	handleInput(keyData: string): void {
+		const kb = getEditorKeybindings();
+
+		if (kb.matches(keyData, "selectUp")) {
+			if (this.filteredCandidates.length === 0) return;
+			this.selectedIndex = this.selectedIndex === 0 ? this.filteredCandidates.length - 1 : this.selectedIndex - 1;
+			return;
+		}
+
+		if (kb.matches(keyData, "selectDown")) {
+			if (this.filteredCandidates.length === 0) return;
+			this.selectedIndex = this.selectedIndex === this.filteredCandidates.length - 1 ? 0 : this.selectedIndex + 1;
+			return;
+		}
+
+		if (kb.matches(keyData, "selectPageUp")) {
+			if (this.filteredCandidates.length === 0) return;
+			this.selectedIndex = Math.max(0, this.selectedIndex - SELECTOR_MAX_VISIBLE);
+			return;
+		}
+
+		if (kb.matches(keyData, "selectPageDown")) {
+			if (this.filteredCandidates.length === 0) return;
+			this.selectedIndex = Math.min(this.filteredCandidates.length - 1, this.selectedIndex + SELECTOR_MAX_VISIBLE);
+			return;
+		}
+
+		if (kb.matches(keyData, "selectConfirm")) {
+			const selected = this.filteredCandidates[this.selectedIndex];
+			if (selected) this.onSelect(selected.session);
+			return;
+		}
+
+		if (kb.matches(keyData, "selectCancel")) {
+			this.onCancel();
+			return;
+		}
+
+		this.searchInput.handleInput(keyData);
+		this.applyFilter();
+	}
+
+	private applyFilter(): void {
+		const query = oneLine(this.searchInput.getValue()).toLowerCase();
+		if (!query) {
+			this.filteredCandidates = this.allCandidates;
+			this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.filteredCandidates.length - 1));
+			return;
+		}
+
+		this.filteredCandidates = this.allCandidates.filter((candidate) => candidate.search.includes(query));
+		this.selectedIndex = 0;
+	}
+}
+
+async function pickSession(
+	ctx: ExtensionCommandContext,
+	repo: RepoIdentity,
+	sessions: SessionInfo[],
+): Promise<SessionInfo | undefined> {
+	const selectedPath = await ctx.ui.custom<string | undefined>((_tui, theme, _keybindings, done) => {
+		return new RepoSessionSelectorComponent(
+			`Shared sessions (${repo.display})`,
+			sessions,
+			theme,
+			(session) => done(session.path),
+			() => done(undefined),
+		);
+	});
+
+	if (!selectedPath) return undefined;
+	return sessions.find((session) => session.path === selectedPath);
 }
 
 function parseMode(args: string): ResumeMode {
@@ -194,13 +355,7 @@ async function runRepoResume(pi: ExtensionAPI, args: string, ctx: ExtensionComma
 	if (mode === "latest") {
 		target = sessions[0];
 	} else {
-		const options = sessions.map((session, index) => ({
-			label: optionLabel(index, session),
-			session,
-		}));
-		const selected = await ctx.ui.select(`Shared sessions (${repo.display})`, options.map((option) => option.label));
-		if (!selected) return;
-		target = options.find((option) => option.label === selected)?.session;
+		target = await pickSession(ctx, repo, sessions);
 	}
 
 	if (!target) {
