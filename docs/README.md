@@ -8,10 +8,12 @@ Repository documentation that complements the shipped Pi extensions.
   - the public `agent-scripts` `/landpr` flow
   - a stricter internal variant with additional safety checks
 
-Key additions in this version:
-- optional repo guard template
-- PR head SHA capture and remote drift detection
-- safer force-push lease usage for rebased PR branches
-- post-merge comment handling via temp files instead of inline `--body`
-- explicit merge verification and recovery steps
-- base-branch handling without hard-coding `main`
+  Key additions in this version:
+  - optional repo guard template
+  - PR head SHA capture and remote drift detection
+  - safer force-push lease usage for rebased PR branches
+  - post-merge comment handling via temp files instead of inline `--body`
+  - explicit merge verification and recovery steps
+  - base-branch handling without hard-coding `main`
+
+- [`slash-commands/review-security.md`](slash-commands/review-security.md) — red-team a PR or diff as a security reviewer, with `SECURITY.md` treated as a contract and explicit emphasis on trust boundaries, policy violations, exploitability, uncommon CVE classes, and evidence-backed findings.
