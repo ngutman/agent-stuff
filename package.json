@@ -15,7 +15,8 @@
   "pi": {
     "extensions": [
       "./pi-extensions/repo-shared-sessions/index.ts",
-      "./pi-extensions/autoname-sessions/index.ts"
+      "./pi-extensions/autoname-sessions/index.ts",
+      "./pi-extensions/copy-last-response/index.ts"
     ]
   },
   "peerDependencies": {

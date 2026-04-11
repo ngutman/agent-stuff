@@ -31,6 +31,17 @@ Command:
 
 This command infers concise purpose-based session names from transcript samples, with deterministic fallback behavior and a local cache to avoid unnecessary renames.
 
+### `copy-last-response`
+
+Path: `pi-extensions/copy-last-response/index.ts`
+
+Triggers:
+
+- `Alt+O` — copy the last completed assistant response to the clipboard as markdown
+- `/copy-last-response` — same behavior via slash command
+
+This copies only assistant text blocks, preserving markdown and excluding thinking/tool-call blocks.
+
 ## Documentation
 
 ### Slash commands
@@ -56,6 +67,7 @@ One-off load of a single extension:
 
 ```bash
 pi -e ~/workspace/agent-stuff/pi-extensions/repo-shared-sessions/index.ts
+pi -e ~/workspace/agent-stuff/pi-extensions/copy-last-response/index.ts
 ```
 
 ## Development notes
