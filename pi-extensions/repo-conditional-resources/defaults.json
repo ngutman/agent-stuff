@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "debug": false,
+  "profiles": [
+    {
+      "name": "openclaw-skills",
+      "enabled": true,
+      "match": {
+        "repoPatterns": [
+          "openclaw/*"
+        ]
+      },
+      "resources": {
+        "skills": [
+          "~/.pi/agent/repo-resources/openclaw/skills"
+        ]
+      }
+    },
+    {
+      "name": "openclaw-prompts",
+      "enabled": true,
+      "match": {
+        "repoPatterns": [
+          "openclaw/*"
+        ],
+        "excludeRepoPatterns": [
+          "openclaw/maintainers"
+        ]
+      },
+      "resources": {
+        "prompts": [
+          "~/.pi/agent/repo-resources/openclaw/prompts"
+        ]
+      }
+    }
+  ]
+}

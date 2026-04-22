@@ -42,6 +42,21 @@ Triggers:
 
 This copies only assistant text blocks, preserving markdown and excluding thinking/tool-call blocks.
 
+### `repo-conditional-resources`
+
+Path: `pi-extensions/repo-conditional-resources/index.js`
+
+Purpose:
+
+- conditionally load Pi skills/prompts/themes based on the current git repository
+- keep globally installed workflows hidden unless a matching repo is open
+- support machine-local symlink targets under `~/.pi/agent/repo-resources/`
+
+Default bundled profiles:
+
+- load OpenClaw skills for `openclaw/*`
+- load OpenClaw prompts for `openclaw/*` except `openclaw/maintainers`
+
 ## Documentation
 
 ### Slash commands
