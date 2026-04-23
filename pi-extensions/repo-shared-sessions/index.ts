@@ -1,6 +1,6 @@
-import type { ExtensionAPI, ExtensionCommandContext, SessionInfo, Theme } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, KeybindingsManager, SessionInfo, Theme } from "@mariozechner/pi-coding-agent";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
-import { Input, getEditorKeybindings, truncateToWidth, visibleWidth, type Component, type Focusable } from "@mariozechner/pi-tui";
+import { Input, truncateToWidth, visibleWidth, type Component, type Focusable } from "@mariozechner/pi-tui";
 import { basename, resolve } from "node:path";
 
 type RepoIdentity = {
@@ -184,6 +184,7 @@ class RepoSessionSelectorComponent implements Component, Focusable {
 		private readonly heading: string,
 		sessions: SessionInfo[],
 		private readonly theme: Theme,
+		private readonly keybindings: KeybindingsManager,
 		private readonly onSelect: (session: SessionInfo) => void,
 		private readonly onCancel: () => void,
 	) {
@@ -259,39 +260,37 @@ class RepoSessionSelectorComponent implements Component, Focusable {
 	}
 
 	handleInput(keyData: string): void {
-		const kb = getEditorKeybindings();
-
-		if (kb.matches(keyData, "selectUp")) {
+		if (this.keybindings.matches(keyData, "tui.select.up")) {
 			if (this.filteredCandidates.length === 0) return;
 			this.selectedIndex = this.selectedIndex === 0 ? this.filteredCandidates.length - 1 : this.selectedIndex - 1;
 			return;
 		}
 
-		if (kb.matches(keyData, "selectDown")) {
+		if (this.keybindings.matches(keyData, "tui.select.down")) {
 			if (this.filteredCandidates.length === 0) return;
 			this.selectedIndex = this.selectedIndex === this.filteredCandidates.length - 1 ? 0 : this.selectedIndex + 1;
 			return;
 		}
 
-		if (kb.matches(keyData, "selectPageUp")) {
+		if (this.keybindings.matches(keyData, "tui.select.pageUp")) {
 			if (this.filteredCandidates.length === 0) return;
 			this.selectedIndex = Math.max(0, this.selectedIndex - SELECTOR_MAX_VISIBLE);
 			return;
 		}
 
-		if (kb.matches(keyData, "selectPageDown")) {
+		if (this.keybindings.matches(keyData, "tui.select.pageDown")) {
 			if (this.filteredCandidates.length === 0) return;
 			this.selectedIndex = Math.min(this.filteredCandidates.length - 1, this.selectedIndex + SELECTOR_MAX_VISIBLE);
 			return;
 		}
 
-		if (kb.matches(keyData, "selectConfirm")) {
+		if (this.keybindings.matches(keyData, "tui.select.confirm")) {
 			const selected = this.filteredCandidates[this.selectedIndex];
 			if (selected) this.onSelect(selected.session);
 			return;
 		}
 
-		if (kb.matches(keyData, "selectCancel")) {
+		if (this.keybindings.matches(keyData, "tui.select.cancel")) {
 			this.onCancel();
 			return;
 		}
@@ -318,11 +317,12 @@ async function pickSession(
 	repo: RepoIdentity,
 	sessions: SessionInfo[],
 ): Promise<SessionInfo | undefined> {
-	const selectedPath = await ctx.ui.custom<string | undefined>((_tui, theme, _keybindings, done) => {
+	const selectedPath = await ctx.ui.custom<string | undefined>((_tui, theme, keybindings, done) => {
 		return new RepoSessionSelectorComponent(
 			`Shared sessions (${repo.display})`,
 			sessions,
 			theme,
+			keybindings,
 			(session) => done(session.path),
 			() => done(undefined),
 		);
